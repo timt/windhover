@@ -4,7 +4,7 @@ Phone-based real-time 3D wind and gust-free vario for gliders — a low-cost alt
 
 The Android app fuses indicated airspeed and pressure altitude from an LXNAV instrument (Bluetooth) with the phone's IMU and GNSS, building on the open-source [Larus](https://github.com/larus-breeze) algorithms.
 
-**Status:** Phase 1 — Bluetooth probe and data logger. See [the project brief](docs/hawk-alternative-brief.md).
+**Status:** Phase 1 — Bluetooth probe and data logger.
 
 ## Building
 

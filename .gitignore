@@ -10,3 +10,6 @@ captures/
 *.iml
 .idea/
 .DS_Store
+
+# Local-only planning notes
+docs/private/
