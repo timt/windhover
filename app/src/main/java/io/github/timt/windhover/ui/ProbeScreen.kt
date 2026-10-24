@@ -2,6 +2,7 @@ package io.github.timt.windhover.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -41,10 +42,18 @@ import io.github.timt.windhover.core.profile.DeviceProfile
 import io.github.timt.windhover.core.profile.ProfileDraft
 import io.github.timt.windhover.core.profile.Profiles
 import io.github.timt.windhover.core.profile.Transport
+import io.github.timt.windhover.core.session.ConnectionState
+import io.github.timt.windhover.core.session.LoggingState
 import io.github.timt.windhover.core.stream.ReceivedLine
 import java.util.Locale
 
 private val knownModels = listOf("S80", "LX9000")
+
+private val requestedPermissions =
+    listOfNotNull(
+        Manifest.permission.BLUETOOTH_CONNECT,
+        Manifest.permission.POST_NOTIFICATIONS.takeIf { Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU },
+    ).toTypedArray()
 
 @Composable
 fun ProbeScreen(
@@ -52,6 +61,7 @@ fun ProbeScreen(
     viewModel: ProbeViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val logging by viewModel.logging.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var permitted by remember {
         mutableStateOf(
@@ -59,8 +69,10 @@ fun ProbeScreen(
                 PackageManager.PERMISSION_GRANTED,
         )
     }
-    val requestPermission =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { permitted = it }
+    val requestPermissions =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            permitted = it[Manifest.permission.BLUETOOTH_CONNECT] == true
+        }
 
     LaunchedEffect(permitted) { if (permitted) viewModel.refreshDevices() }
 
@@ -69,7 +81,7 @@ fun ProbeScreen(
         when {
             !state.bluetoothAvailable -> Text("This device has no Bluetooth adapter")
             !permitted ->
-                Button(onClick = { requestPermission.launch(Manifest.permission.BLUETOOTH_CONNECT) }) {
+                Button(onClick = { requestPermissions.launch(requestedPermissions) }) {
                     Text("Allow Bluetooth access")
                 }
             editor != null ->
@@ -81,7 +93,7 @@ fun ProbeScreen(
                     onCancel = viewModel::cancelEdit,
                     onDelete = viewModel::deleteProfile,
                 )
-            state.connection == ConnectionState.Idle ->
+            logging.connection == ConnectionState.Idle ->
                 ProfileList(
                     profiles = state.profiles,
                     problem = state.profilesProblem,
@@ -89,7 +101,7 @@ fun ProbeScreen(
                     onEdit = viewModel::editProfile,
                     onConnect = viewModel::connect,
                 )
-            else -> LiveStream(state, onDisconnect = viewModel::disconnect)
+            else -> LiveStream(logging, onDisconnect = viewModel::disconnect)
         }
     }
 }
@@ -204,17 +216,23 @@ private fun DraftField(
 
 @Composable
 private fun LiveStream(
-    state: ProbeState,
+    state: LoggingState,
     onDisconnect: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(state.connection.describe(), modifier = Modifier.weight(1f))
         Button(onClick = onDisconnect) {
-            Text(if (state.connection is ConnectionState.Failed) "Back" else "Disconnect")
+            Text(if (state.connection is ConnectionState.Failed) "Back" else "Stop")
         }
     }
+    state.sessionName?.let {
+        Text(
+            "Session $it · ${state.linesLogged} lines",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
     LazyColumn(reverseLayout = true) {
-        items(state.lines.asReversed()) { line -> LineRow(line) }
+        items(state.recent.asReversed()) { line -> LineRow(line) }
     }
 }
 
@@ -238,7 +256,7 @@ private fun ConnectionState.describe() =
     when (this) {
         ConnectionState.Idle -> "Not connected"
         is ConnectionState.Connecting -> "Connecting to ${profile.name}…"
-        is ConnectionState.Connected -> "Connected to ${profile.name}"
+        is ConnectionState.Connected -> "Logging ${profile.name}"
         is ConnectionState.Failed -> "${profile.name}: $reason"
     }
 

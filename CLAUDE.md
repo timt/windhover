@@ -11,6 +11,7 @@ Android app giving real-time 3D wind and a gust-free vario from LXNAV IAS/pressu
 - Single module `app`, package `io.github.timt.windhover`
 - `core` package: pure Kotlin, no `android.*` imports — unit-tested on the JVM
 - `ui` package: Jetpack Compose
+- `logging` package: foreground service that owns the Bluetooth link and writes session files
 - No NDK until Phase 4 (C++ for Larus, or Rust for a clean-room rewrite)
 
 ## Commands
@@ -20,6 +21,7 @@ Android app giving real-time 3D wind and a gust-free vario from LXNAV IAS/pressu
 ./gradlew ktlintFormat        # auto-fix style
 ./gradlew assembleDebug       # build APK
 ./gradlew installDebug        # install on connected phone
+adb pull /sdcard/Android/data/io.github.timt.windhover/files/sessions   # fetch logged sessions
 ```
 
 ## Constraints

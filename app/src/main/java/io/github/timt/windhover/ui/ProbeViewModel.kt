@@ -4,51 +4,27 @@ import android.annotation.SuppressLint
 import android.app.Application
 import android.bluetooth.BluetoothManager
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
 import dev.forkhandles.result4k.Failure
 import dev.forkhandles.result4k.Success
-import io.github.timt.windhover.bluetooth.LinkEvent
-import io.github.timt.windhover.bluetooth.sppLines
 import io.github.timt.windhover.core.profile.DeviceProfile
 import io.github.timt.windhover.core.profile.ProfileDraft
 import io.github.timt.windhover.core.profile.ProfileError
-import io.github.timt.windhover.core.profile.ProfileFile
 import io.github.timt.windhover.core.profile.Profiles
 import io.github.timt.windhover.core.profile.Transport
 import io.github.timt.windhover.core.profile.toProfile
-import io.github.timt.windhover.core.stream.ReceivedLine
-import kotlinx.coroutines.Job
+import io.github.timt.windhover.core.session.LoggingState
+import io.github.timt.windhover.logging.LoggingSession
+import io.github.timt.windhover.profileFile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import java.io.File
 import java.util.UUID
 
 data class PairedDevice(
     val name: String,
     val address: String,
 )
-
-sealed interface ConnectionState {
-    data object Idle : ConnectionState
-
-    data class Connecting(
-        val profile: DeviceProfile,
-    ) : ConnectionState
-
-    data class Connected(
-        val profile: DeviceProfile,
-    ) : ConnectionState
-
-    data class Failed(
-        val profile: DeviceProfile,
-        val reason: String,
-    ) : ConnectionState
-}
 
 data class ProfileEditor(
     val id: String?,
@@ -62,11 +38,7 @@ data class ProbeState(
     val profiles: Profiles = Profiles(),
     val profilesProblem: String? = null,
     val editor: ProfileEditor? = null,
-    val connection: ConnectionState = ConnectionState.Idle,
-    val lines: List<ReceivedLine> = emptyList(),
 )
-
-private const val RECENT_LINE_LIMIT = 200
 
 private val emptyDraft = ProfileDraft(name = "", glider = "", lxModel = "", address = "", transport = Transport.SPP)
 
@@ -74,11 +46,11 @@ class ProbeViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
     private val adapter = application.getSystemService(BluetoothManager::class.java)?.adapter
-    private val profileFile = ProfileFile(File(application.filesDir, "profiles.json"))
+    private val profileFile = application.profileFile()
     private val mutableState = MutableStateFlow(ProbeState(bluetoothAvailable = adapter != null).withStoredProfiles())
-    private var link: Job? = null
 
     val state: StateFlow<ProbeState> = mutableState.asStateFlow()
+    val logging: StateFlow<LoggingState> = LoggingSession.state
 
     @SuppressLint("MissingPermission")
     fun refreshDevices() {
@@ -111,38 +83,18 @@ class ProbeViewModel(
 
     fun connect(profile: DeviceProfile) {
         storeProfiles { it.markUsed(profile.id) }
-        if (profile.transport == Transport.BLE) {
-            fail(profile, "BLE is not supported yet")
-            return
+        when (profile.transport) {
+            Transport.SPP -> LoggingSession.start(getApplication(), profile)
+            Transport.BLE -> LoggingSession.reject(profile, "BLE is not supported yet")
         }
-        val remote = adapter?.getRemoteDevice(profile.address) ?: return
-        link?.cancel()
-        mutableState.update { it.copy(connection = ConnectionState.Connecting(profile), lines = emptyList()) }
-        link =
-            viewModelScope.launch {
-                remote
-                    .sppLines()
-                    .onCompletion { cause -> if (cause == null) fail(profile, "Connection closed by device") }
-                    .catch { error -> fail(profile, error.message ?: error.javaClass.simpleName) }
-                    .collect { event -> mutableState.update { it.apply(event, profile) } }
-            }
     }
 
-    fun disconnect() {
-        link?.cancel()
-        link = null
-        mutableState.update { it.copy(connection = ConnectionState.Idle) }
-    }
+    fun disconnect() = LoggingSession.stop(getApplication())
 
     private fun openEditor(editor: ProfileEditor) {
         refreshDevices()
         mutableState.update { it.copy(editor = editor) }
     }
-
-    private fun fail(
-        profile: DeviceProfile,
-        reason: String,
-    ) = mutableState.update { it.copy(connection = ConnectionState.Failed(profile, reason)) }
 
     private fun storeProfiles(change: (Profiles) -> Profiles) {
         val profiles = change(mutableState.value.profiles)
@@ -155,14 +107,6 @@ class ProbeViewModel(
             is Success -> copy(profiles = loaded.value)
             is Failure -> copy(profilesProblem = "Saved profiles could not be read: ${loaded.reason.describe()}")
         }
-
-    private fun ProbeState.apply(
-        event: LinkEvent,
-        profile: DeviceProfile,
-    ) = when (event) {
-        LinkEvent.Connected -> copy(connection = ConnectionState.Connected(profile))
-        is LinkEvent.Received -> copy(lines = (lines + event.lines).takeLast(RECENT_LINE_LIMIT))
-    }
 }
 
 private fun DeviceProfile.toDraft() = ProfileDraft(name, glider, lxModel, address, transport)
