@@ -1,6 +1,7 @@
 package io.github.timt.windhover.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,6 +43,8 @@ import io.github.timt.windhover.core.profile.DeviceProfile
 import io.github.timt.windhover.core.profile.ProfileDraft
 import io.github.timt.windhover.core.profile.Profiles
 import io.github.timt.windhover.core.profile.Transport
+import io.github.timt.windhover.core.scan.NearbyDevice
+import io.github.timt.windhover.core.scan.NearbyDevices
 import io.github.timt.windhover.core.session.ConnectionState
 import io.github.timt.windhover.core.session.LoggingState
 import io.github.timt.windhover.core.stream.ReceivedLine
@@ -63,12 +66,9 @@ fun ProbeScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val logging by viewModel.logging.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var permitted by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
-                PackageManager.PERMISSION_GRANTED,
-        )
-    }
+    var permitted by remember { mutableStateOf(context.granted(Manifest.permission.BLUETOOTH_CONNECT)) }
+    val requestScan =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { if (it) viewModel.scan() }
     val requestPermissions =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             permitted = it[Manifest.permission.BLUETOOTH_CONNECT] == true
@@ -88,7 +88,16 @@ fun ProbeScreen(
                 ProfileForm(
                     editor = editor,
                     devices = state.devices,
+                    nearby = state.nearby,
                     onChange = viewModel::updateDraft,
+                    onScan = {
+                        if (context.granted(Manifest.permission.BLUETOOTH_SCAN)) {
+                            viewModel.scan()
+                        } else {
+                            requestScan.launch(Manifest.permission.BLUETOOTH_SCAN)
+                        }
+                    },
+                    onPickNearby = viewModel::pickNearby,
                     onSave = viewModel::saveProfile,
                     onCancel = viewModel::cancelEdit,
                     onDelete = viewModel::deleteProfile,
@@ -147,7 +156,10 @@ private fun ProfileList(
 private fun ProfileForm(
     editor: ProfileEditor,
     devices: List<PairedDevice>,
+    nearby: NearbyDevices,
     onChange: (ProfileDraft) -> Unit,
+    onScan: () -> Unit,
+    onPickNearby: (NearbyDevice) -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
     onDelete: (String) -> Unit,
@@ -158,16 +170,9 @@ private fun ProfileForm(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(if (editor.id == null) "New profile" else "Edit profile", style = MaterialTheme.typography.titleMedium)
-        OutlinedTextField(draft.name, { onChange(draft.copy(name = it)) }, label = { Text("Name") }, singleLine = true)
-        OutlinedTextField(
-            draft.glider,
-            { onChange(draft.copy(glider = it)) },
-            label = { Text("Glider") },
-            singleLine = true,
-        )
-        OutlinedTextField(draft.lxModel, {
-            onChange(draft.copy(lxModel = it))
-        }, label = { Text("LX model") }, singleLine = true)
+        DraftField("Name", draft.name) { onChange(draft.copy(name = it)) }
+        DraftField("Glider", draft.glider) { onChange(draft.copy(glider = it)) }
+        DraftField("LX model", draft.lxModel) { onChange(draft.copy(lxModel = it)) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             knownModels.forEach { model ->
                 FilterChip(draft.lxModel == model, { onChange(draft.copy(lxModel = model)) }, label = { Text(model) })
@@ -184,27 +189,42 @@ private fun ProfileForm(
             }
         }
         DraftField("Bluetooth address", draft.address) { onChange(draft.copy(address = it)) }
-        Text("Paired devices", style = MaterialTheme.typography.labelLarge)
-        if (devices.isEmpty()) Text("No paired devices. Pair the LXNAV unit in Android Bluetooth settings first.")
-        devices.forEach { device ->
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { onChange(draft.withDevice(device)) }
-                        .padding(vertical = 8.dp),
-            ) {
-                Text(device.name, style = MaterialTheme.typography.bodyLarge)
-                Text(device.address, style = MaterialTheme.typography.bodySmall)
-            }
-        }
         editor.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onSave) { Text("Save") }
             OutlinedButton(onClick = onCancel) { Text("Cancel") }
             editor.id?.let { id -> TextButton(onClick = { onDelete(id) }) { Text("Delete") } }
         }
+        HorizontalDivider()
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Nearby devices", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            OutlinedButton(onClick = onScan, enabled = !nearby.scanning) {
+                Text(if (nearby.scanning) "Scanning…" else "Scan")
+            }
+        }
+        nearby.ordered.forEach { device ->
+            DeviceRow(
+                title = device.name ?: "Unnamed device",
+                subtitle = "${device.address} · ${if (device.paired) "paired" else "tap to pair"}",
+                onClick = { onPickNearby(device) },
+            )
+        }
+        Text("Paired devices", style = MaterialTheme.typography.labelLarge)
+        if (devices.isEmpty()) Text("No paired devices yet. Scan above to find the LXNAV unit.")
+        devices.forEach { device ->
+            DeviceRow(device.name, device.address, onClick = { onChange(draft.withDevice(device)) })
+        }
     }
+}
+
+@Composable
+private fun DeviceRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) = Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp)) {
+    Text(title, style = MaterialTheme.typography.bodyLarge)
+    Text(subtitle, style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable
@@ -243,6 +263,9 @@ private fun LineRow(line: ReceivedLine) =
         fontFamily = FontFamily.Monospace,
         style = MaterialTheme.typography.bodySmall,
     )
+
+private fun Context.granted(permission: String) =
+    ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
 private fun DeviceProfile.summary(lastUsed: Boolean) =
     listOf(glider, lxModel, transport.name, address, "last used".takeIf { lastUsed })
