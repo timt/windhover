@@ -14,14 +14,13 @@ class LoggingStateTest {
     fun `starting a session clears previous lines and counts`() {
         val previous = LoggingState(linesLogged = 9, recent = listOf(ReceivedLine("old", 1)))
 
-        expectThat(previous.starting(profile, "20261024-094500-S80"))
-            .isEqualTo(LoggingState(ConnectionState.Connecting(profile), "20261024-094500-S80"))
+        expectThat(previous.starting(profile)).isEqualTo(LoggingState(ConnectionState.Connecting(profile)))
     }
 
     @Test
-    fun `connecting session becomes connected`() {
-        expectThat(LoggingState().starting(profile, "dir").connected().connection)
-            .isEqualTo(ConnectionState.Connected(profile))
+    fun `session is only named once connected`() {
+        expectThat(LoggingState().starting(profile).connected("20261024-094500-S80"))
+            .isEqualTo(LoggingState(ConnectionState.Connected(profile), "20261024-094500-S80"))
     }
 
     @Test
@@ -36,7 +35,7 @@ class LoggingStateTest {
 
     @Test
     fun `failure keeps the profile and reason`() {
-        expectThat(LoggingState().starting(profile, "dir").failed("Connection closed by device").connection)
+        expectThat(LoggingState().starting(profile).failed("Connection closed by device").connection)
             .isEqualTo(ConnectionState.Failed(profile, "Connection closed by device"))
     }
 

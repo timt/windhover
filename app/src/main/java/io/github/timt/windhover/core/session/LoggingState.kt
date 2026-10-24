@@ -35,12 +35,10 @@ data class LoggingState(
     val linesLogged: Long = 0,
     val recent: List<ReceivedLine> = emptyList(),
 ) {
-    fun starting(
-        profile: DeviceProfile,
-        sessionName: String,
-    ) = LoggingState(ConnectionState.Connecting(profile), sessionName)
+    fun starting(profile: DeviceProfile) = LoggingState(ConnectionState.Connecting(profile))
 
-    fun connected() = connection.profile?.let { copy(connection = ConnectionState.Connected(it)) } ?: this
+    fun connected(sessionName: String) =
+        connection.profile?.let { copy(connection = ConnectionState.Connected(it), sessionName = sessionName) } ?: this
 
     fun received(
         lines: List<ReceivedLine>,

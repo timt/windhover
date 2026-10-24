@@ -33,7 +33,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import java.io.IOException
 
 private const val CHANNEL_ID = "logging"
 private const val NOTIFICATION_ID = 1
@@ -81,8 +80,6 @@ class LoggingService : Service() {
             scope.launch {
                 try {
                     log(profile)
-                } catch (e: IOException) {
-                    LoggingSession.reject(profile, "Could not start session: ${e.message}")
                 } finally {
                     if (wakeLock.isHeld) wakeLock.release()
                     stopForeground(STOP_FOREGROUND_REMOVE)
@@ -93,15 +90,19 @@ class LoggingService : Service() {
 
     private suspend fun log(profile: DeviceProfile) {
         val remote = getSystemService(BluetoothManager::class.java).adapter.getRemoteDevice(profile.address)
-        SessionWriter.open(sessionsRoot(), header(profile)).use { writer ->
-            LoggingSession.update { it.starting(profile, writer.directory.name) }
+        var writer: SessionWriter? = null
+        LoggingSession.update { it.starting(profile) }
+        try {
             remote
                 .sppLines()
                 .onEach { event ->
                     when (event) {
-                        LinkEvent.Connected -> LoggingSession.update { it.connected() }
+                        LinkEvent.Connected -> {
+                            val opened = SessionWriter.open(sessionsRoot(), header(profile)).also { writer = it }
+                            LoggingSession.update { it.connected(opened.directory.name) }
+                        }
                         is LinkEvent.Received -> {
-                            writer.append(event.lines, SystemClock.elapsedRealtimeNanos())
+                            writer?.append(event.lines, SystemClock.elapsedRealtimeNanos())
                             LoggingSession.update { it.received(event.lines, RECENT_LINE_LIMIT) }
                         }
                     }
@@ -113,6 +114,8 @@ class LoggingService : Service() {
                 }.catch { error ->
                     LoggingSession.update { it.failed(error.message ?: error.javaClass.simpleName) }
                 }.collect()
+        } finally {
+            writer?.close()
         }
     }
 
