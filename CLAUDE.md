@@ -1,6 +1,6 @@
 # Windhover
 
-Android app giving real-time 3D wind and a gust-free vario from LXNAV IAS/pressure altitude plus phone sensors. Goals, phases and risks are in `docs/private/hawk-alternative-brief.md` (local only, gitignored — never commit it).
+Android app giving real-time 3D wind and a gust-free vario from LXNAV IAS/pressure altitude plus phone sensors. Goals, phases and risks are in `docs/private/project-brief.md` (local only, gitignored — never commit it).
 
 ## Working practices
 - Kotlin, `kotlin-developer` skill + XP/TDD workflow

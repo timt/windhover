@@ -1,6 +1,6 @@
 # Windhover
 
-Phone-based real-time 3D wind and gust-free vario for gliders — a low-cost alternative to LXNAV HAWK for units that can't run it (S80, pre-Gen4 LX9000).
+Phone-based real-time 3D wind and gust-free vario for gliders flying with LXNAV instruments such as the S80 and LX9000.
 
 The Android app fuses indicated airspeed and pressure altitude from an LXNAV instrument (Bluetooth) with the phone's IMU and GNSS, building on the open-source [Larus](https://github.com/larus-breeze) algorithms.
 
