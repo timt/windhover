@@ -205,7 +205,7 @@ private fun ProfileForm(
         nearby.ordered.forEach { device ->
             DeviceRow(
                 title = device.name ?: "Unnamed device",
-                subtitle = "${device.address} · ${if (device.paired) "paired" else "tap to pair"}",
+                subtitle = device.describe(),
                 onClick = { onPickNearby(device) },
             )
         }
@@ -263,6 +263,13 @@ private fun LineRow(line: ReceivedLine) =
         fontFamily = FontFamily.Monospace,
         style = MaterialTheme.typography.bodySmall,
     )
+
+private fun NearbyDevice.describe() =
+    when {
+        transport == Transport.BLE -> "$address · BLE"
+        paired -> "$address · paired"
+        else -> "$address · tap to pair"
+    }
 
 private fun Context.granted(permission: String) =
     ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED

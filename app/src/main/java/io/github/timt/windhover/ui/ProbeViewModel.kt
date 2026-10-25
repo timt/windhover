@@ -8,7 +8,9 @@ import androidx.lifecycle.viewModelScope
 import dev.forkhandles.result4k.Failure
 import dev.forkhandles.result4k.Success
 import io.github.timt.windhover.bluetooth.DiscoveryEvent
+import io.github.timt.windhover.bluetooth.bleDiscovery
 import io.github.timt.windhover.bluetooth.classicDiscovery
+import io.github.timt.windhover.bluetooth.toNearby
 import io.github.timt.windhover.core.profile.DeviceProfile
 import io.github.timt.windhover.core.profile.ProfileDraft
 import io.github.timt.windhover.core.profile.ProfileError
@@ -24,6 +26,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -89,11 +92,13 @@ class ProbeViewModel(
         mutableState.update { it.copy(nearby = it.nearby.restarted()) }
         scan =
             viewModelScope.launch {
+                val ble = launch { bluetooth.bleDiscovery().catch { }.collect { found(it.toNearby()) } }
                 getApplication<Application>().classicDiscovery(bluetooth).collect { event ->
-                    mutableState.update {
-                        when (event) {
-                            is DiscoveryEvent.Found -> it.copy(nearby = it.nearby.found(event.device))
-                            DiscoveryEvent.Finished -> it.copy(nearby = it.nearby.finished())
+                    when (event) {
+                        is DiscoveryEvent.Found -> found(event.device)
+                        DiscoveryEvent.Finished -> {
+                            ble.cancel()
+                            mutableState.update { it.copy(nearby = it.nearby.finished()) }
                         }
                     }
                 }
@@ -104,7 +109,7 @@ class ProbeViewModel(
     fun pickNearby(device: NearbyDevice) {
         val bluetooth = adapter ?: return
         bluetooth.cancelDiscovery()
-        if (!device.paired) bluetooth.getRemoteDevice(device.address).createBond()
+        if (device.transport == Transport.SPP && !device.paired) bluetooth.getRemoteDevice(device.address).createBond()
         mutableState.update { state ->
             state.copy(
                 editor =
@@ -113,6 +118,7 @@ class ProbeViewModel(
                             draft =
                                 it.draft.copy(
                                     address = device.address,
+                                    transport = device.transport,
                                     name = it.draft.name.ifBlank { device.name.orEmpty() },
                                 ),
                         )
@@ -133,10 +139,7 @@ class ProbeViewModel(
 
     fun connect(profile: DeviceProfile) {
         storeProfiles { it.markUsed(profile.id) }
-        when (profile.transport) {
-            Transport.SPP -> LoggingSession.start(getApplication(), profile)
-            Transport.BLE -> LoggingSession.reject(profile, "BLE is not supported yet")
-        }
+        LoggingSession.start(getApplication(), profile)
     }
 
     fun disconnect() = LoggingSession.stop(getApplication())
@@ -145,6 +148,8 @@ class ProbeViewModel(
         refreshDevices()
         mutableState.update { it.copy(editor = editor) }
     }
+
+    private fun found(device: NearbyDevice) = mutableState.update { it.copy(nearby = it.nearby.found(device)) }
 
     private fun stopScan() {
         scan?.cancel()

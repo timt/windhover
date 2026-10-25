@@ -5,6 +5,8 @@ data class ReceivedLine(
     val receivedAtNanos: Long,
 )
 
+private val boundary = Regex("[\r\n]|(?=\\$)")
+
 data class LineFramer(
     private val maxLineLength: Int = 512,
     private val pending: String = "",
@@ -13,11 +15,10 @@ data class LineFramer(
         chunk: ByteArray,
         receivedAtNanos: Long,
     ): Pair<LineFramer, List<ReceivedLine>> {
-        val parts = (pending + chunk.toString(Charsets.ISO_8859_1)).split('\n')
+        val parts = (pending + chunk.toString(Charsets.ISO_8859_1)).replace("\u0000", "").split(boundary)
         val lines =
             parts
                 .dropLast(1)
-                .map { it.trimEnd('\r') }
                 .filter { it.isNotEmpty() }
                 .map { ReceivedLine(it, receivedAtNanos) }
         val remainder = parts.last().takeIf { it.length <= maxLineLength } ?: ""

@@ -16,8 +16,10 @@ import dev.forkhandles.result4k.valueOrNull
 import io.github.timt.windhover.BuildConfig
 import io.github.timt.windhover.MainActivity
 import io.github.timt.windhover.bluetooth.LinkEvent
+import io.github.timt.windhover.bluetooth.bleLines
 import io.github.timt.windhover.bluetooth.sppLines
 import io.github.timt.windhover.core.profile.DeviceProfile
+import io.github.timt.windhover.core.profile.Transport
 import io.github.timt.windhover.core.session.SessionHeader
 import io.github.timt.windhover.core.session.SessionWriter
 import io.github.timt.windhover.profileFile
@@ -89,12 +91,16 @@ class LoggingService : Service() {
     }
 
     private suspend fun log(profile: DeviceProfile) {
-        val remote = getSystemService(BluetoothManager::class.java).adapter.getRemoteDevice(profile.address)
+        val adapter = getSystemService(BluetoothManager::class.java).adapter
+        val link =
+            when (profile.transport) {
+                Transport.SPP -> adapter.getRemoteDevice(profile.address).sppLines()
+                Transport.BLE -> adapter.bleLines(this, profile.address)
+            }
         var writer: SessionWriter? = null
         LoggingSession.update { it.starting(profile) }
         try {
-            remote
-                .sppLines()
+            link
                 .onEach { event ->
                     when (event) {
                         LinkEvent.Connected -> {

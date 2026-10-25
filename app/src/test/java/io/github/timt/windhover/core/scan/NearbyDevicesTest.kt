@@ -1,5 +1,6 @@
 package io.github.timt.windhover.core.scan
 
+import io.github.timt.windhover.core.profile.Transport
 import org.junit.jupiter.api.Test
 import strikt.api.expectThat
 import strikt.assertions.containsExactly
@@ -37,6 +38,14 @@ class NearbyDevicesTest {
             .isEqualTo(List(5) { true })
         expectThat("Samsung TV".looksLikeLxnav()).isFalse()
         expectThat("Galaxy Buds".looksLikeLxnav()).isFalse()
+    }
+
+    @Test
+    fun `the same address seen over Classic and BLE is listed once per transport`() {
+        val classic = NearbyDevice("S80", "00:11:22:33:44:55", paired = false)
+        val ble = NearbyDevice("S80", "00:11:22:33:44:55", paired = false, transport = Transport.BLE)
+
+        expectThat(NearbyDevices().found(classic).found(ble).ordered).containsExactly(classic, ble)
     }
 
     @Test

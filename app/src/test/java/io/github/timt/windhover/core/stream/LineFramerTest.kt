@@ -30,6 +30,22 @@ class LineFramerTest {
     }
 
     @Test
+    fun `accepts carriage return alone as a terminator and drops NUL padding`() {
+        val (_, lines) = LineFramer().accept("\$A*00\r\u0000\$B*00\r\u0000".toByteArray(), receivedAtNanos = 1_000)
+
+        expectThat(lines.map { it.text }).containsExactly("\$A*00", "\$B*00")
+    }
+
+    @Test
+    fun `a new sentence ends an unterminated one`() {
+        val (framer, first) = LineFramer().accept("\$BTINF,1".toByteArray(), receivedAtNanos = 1_000)
+        val (_, second) = framer.accept("\$GPGGA,2\r".toByteArray(), receivedAtNanos = 2_000)
+
+        expectThat(first).isEmpty()
+        expectThat(second.map { it.text }).containsExactly("\$BTINF,1", "\$GPGGA,2")
+    }
+
+    @Test
     fun `discards an unterminated run longer than the maximum line length`() {
         val (framer, _) = LineFramer(maxLineLength = 8).accept("garbage-garbage".toByteArray(), receivedAtNanos = 1_000)
         val (_, lines) = framer.accept("\$A*00\r\n".toByteArray(), receivedAtNanos = 2_000)

@@ -36,11 +36,6 @@ object LoggingSession {
         dismiss()
     }
 
-    fun reject(
-        profile: DeviceProfile,
-        reason: String,
-    ) = mutableState.update { LoggingState(ConnectionState.Failed(profile, reason)) }
-
     fun dismiss() = mutableState.update { it.copy(connection = ConnectionState.Idle) }
 
     internal fun update(change: (LoggingState) -> LoggingState) = mutableState.update(change)
