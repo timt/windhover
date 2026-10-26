@@ -88,6 +88,7 @@ fun ProbeScreen(
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val editor = state.editor
+        val sessions = state.sessions
         when {
             !state.bluetoothAvailable -> Text("This device has no Bluetooth adapter")
             !permitted ->
@@ -112,11 +113,19 @@ fun ProbeScreen(
                     onCancel = viewModel::cancelEdit,
                     onDelete = viewModel::deleteProfile,
                 )
+            sessions != null && logging.connection == ConnectionState.Idle ->
+                SessionList(
+                    browser = sessions,
+                    onExport = viewModel::export,
+                    onShared = viewModel::shared,
+                    onBack = viewModel::hideSessions,
+                )
             logging.connection == ConnectionState.Idle ->
                 ProfileList(
                     profiles = state.profiles,
                     problem = state.profilesProblem,
                     onAdd = viewModel::newProfile,
+                    onSessions = viewModel::showSessions,
                     onEdit = viewModel::editProfile,
                     onConnect = { profile ->
                         if (context.granted(Manifest.permission.ACCESS_FINE_LOCATION)) {
@@ -137,11 +146,13 @@ private fun ProfileList(
     profiles: Profiles,
     problem: String?,
     onAdd: () -> Unit,
+    onSessions: () -> Unit,
     onEdit: (DeviceProfile) -> Unit,
     onConnect: (DeviceProfile) -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Profiles", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        OutlinedButton(onClick = onSessions) { Text("Sessions") }
         Button(onClick = onAdd) { Text("Add profile") }
     }
     problem?.let { Text(it, color = MaterialTheme.colorScheme.error) }

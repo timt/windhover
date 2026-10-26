@@ -20,8 +20,14 @@ import io.github.timt.windhover.core.profile.toProfile
 import io.github.timt.windhover.core.scan.NearbyDevice
 import io.github.timt.windhover.core.scan.NearbyDevices
 import io.github.timt.windhover.core.session.LoggingState
+import io.github.timt.windhover.core.session.SessionSummary
+import io.github.timt.windhover.core.session.sessions
+import io.github.timt.windhover.core.session.zipTo
+import io.github.timt.windhover.exportsDir
 import io.github.timt.windhover.logging.LoggingSession
 import io.github.timt.windhover.profileFile
+import io.github.timt.windhover.sessionsRoot
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +35,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
 import java.util.UUID
 
 data class PairedDevice(
@@ -49,6 +58,14 @@ data class ProbeState(
     val profilesProblem: String? = null,
     val editor: ProfileEditor? = null,
     val nearby: NearbyDevices = NearbyDevices(),
+    val sessions: SessionBrowser? = null,
+)
+
+data class SessionBrowser(
+    val sessions: List<SessionSummary> = emptyList(),
+    val exporting: File? = null,
+    val readyToShare: File? = null,
+    val problem: String? = null,
 )
 
 private val emptyDraft = ProfileDraft(name = "", glider = "", lxModel = "", address = "", transport = Transport.SPP)
@@ -144,6 +161,42 @@ class ProbeViewModel(
 
     fun disconnect() = LoggingSession.stop(getApplication())
 
+    fun showSessions() {
+        mutableState.update { it.copy(sessions = SessionBrowser()) }
+        viewModelScope.launch {
+            val sessions = withContext(Dispatchers.IO) { getApplication<Application>().sessionsRoot().sessions() }
+            updateSessions { it.copy(sessions = sessions) }
+        }
+    }
+
+    fun hideSessions() = mutableState.update { it.copy(sessions = null) }
+
+    fun export(session: SessionSummary) {
+        if (mutableState.value.sessions?.exporting != null) return
+        updateSessions { it.copy(exporting = session.directory, problem = null) }
+        viewModelScope.launch {
+            try {
+                val zip =
+                    withContext(
+                        Dispatchers.IO,
+                    ) { session.directory.zipInto(getApplication<Application>().exportsDir()) }
+                updateSessions { it.copy(exporting = null, readyToShare = zip) }
+            } catch (e: IOException) {
+                updateSessions {
+                    it.copy(
+                        exporting = null,
+                        problem = "Could not zip ${session.directory.name}: ${e.message}",
+                    )
+                }
+            }
+        }
+    }
+
+    fun shared() = updateSessions { it.copy(readyToShare = null) }
+
+    private fun updateSessions(change: (SessionBrowser) -> SessionBrowser) =
+        mutableState.update { state -> state.copy(sessions = state.sessions?.let(change)) }
+
     private fun openEditor(editor: ProfileEditor) {
         refreshDevices()
         mutableState.update { it.copy(editor = editor) }
@@ -169,6 +222,12 @@ class ProbeViewModel(
             is Success -> copy(profiles = loaded.value)
             is Failure -> copy(profilesProblem = "Saved profiles could not be read: ${loaded.reason.describe()}")
         }
+}
+
+private fun File.zipInto(exports: File): File {
+    exports.deleteRecursively()
+    exports.mkdirs()
+    return exports.resolve("$name.zip").also { zip -> zip.outputStream().use(::zipTo) }
 }
 
 private fun DeviceProfile.toDraft() = ProfileDraft(name, glider, lxModel, address, transport)

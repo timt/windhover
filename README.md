@@ -15,6 +15,28 @@ Requires JDK 21 and the Android SDK (platform 37).
 ./gradlew installDebug
 ```
 
+## Session files
+
+Each logging session is a folder named `<UTC start>-<profile>` containing:
+
+| File | Contents |
+|---|---|
+| `header.json` | Profile, phone, sensors and achieved sample rates |
+| `lx.log` | Every line from the LX unit, prefixed with its receive time |
+| `imu.tsv.gz` | Accelerometer, gyro and magnetometer samples (calibrated and uncalibrated) |
+| `location.tsv` | Phone GNSS fixes |
+| `gnss-raw.txt.gz` | Raw GNSS measurements in GnssLogger "Raw" format |
+
+All timestamps are `SystemClock.elapsedRealtimeNanos()`, so every file shares one clock.
+
+To share a session, tap **Sessions** on the profiles screen, then tap a session to zip it and open the Android share sheet.
+
+To copy every session to a computer over USB, enable USB debugging and run:
+
+```bash
+adb pull /sdcard/Android/data/io.github.timt.windhover/files/sessions
+```
+
 ## Licence
 
 GPL-3.0 — see [LICENSE](LICENSE).
