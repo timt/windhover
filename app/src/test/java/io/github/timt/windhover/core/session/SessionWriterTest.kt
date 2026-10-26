@@ -38,6 +38,22 @@ class SessionWriterTest {
     }
 
     @Test
+    fun `rewriting the header records sensors and achieved rates`() {
+        val finished =
+            header.copy(
+                sensors = listOf(SensorInfo("gyro", "LSM6DSV Gyroscope", "STMicro", 2_500, 0.0011f, 34.9f)),
+                achievedRatesHz = mapOf("gyro" to 400.0, "location" to 1.0),
+            )
+
+        SessionWriter.open(root, header).use { writer ->
+            writer.writeHeader(finished)
+
+            expectThat(sessionHeaderFromJson(writer.directory.resolve("header.json").readText()))
+                .isEqualTo(Success(finished))
+        }
+    }
+
+    @Test
     fun `lines are logged with their receive timestamp and nothing is lost on close`() {
         val writer = SessionWriter.open(root, header)
 

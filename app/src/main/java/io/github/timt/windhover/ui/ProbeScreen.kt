@@ -58,6 +58,9 @@ private val requestedPermissions =
         Manifest.permission.POST_NOTIFICATIONS.takeIf { Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU },
     ).toTypedArray()
 
+private val locationPermissions =
+    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+
 @Composable
 fun ProbeScreen(
     modifier: Modifier = Modifier,
@@ -72,6 +75,13 @@ fun ProbeScreen(
     val requestPermissions =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             permitted = it[Manifest.permission.BLUETOOTH_CONNECT] == true
+        }
+
+    var pendingConnect by remember { mutableStateOf<DeviceProfile?>(null) }
+    val requestLocation =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            pendingConnect?.let(viewModel::connect)
+            pendingConnect = null
         }
 
     LaunchedEffect(permitted) { if (permitted) viewModel.refreshDevices() }
@@ -108,7 +118,14 @@ fun ProbeScreen(
                     problem = state.profilesProblem,
                     onAdd = viewModel::newProfile,
                     onEdit = viewModel::editProfile,
-                    onConnect = viewModel::connect,
+                    onConnect = { profile ->
+                        if (context.granted(Manifest.permission.ACCESS_FINE_LOCATION)) {
+                            viewModel.connect(profile)
+                        } else {
+                            pendingConnect = profile
+                            requestLocation.launch(locationPermissions)
+                        }
+                    },
                 )
             else -> LiveStream(logging, onDisconnect = viewModel::disconnect)
         }

@@ -1,5 +1,6 @@
 package io.github.timt.windhover.logging
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.bluetooth.BluetoothManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -20,6 +22,7 @@ import io.github.timt.windhover.bluetooth.bleLines
 import io.github.timt.windhover.bluetooth.sppLines
 import io.github.timt.windhover.core.profile.DeviceProfile
 import io.github.timt.windhover.core.profile.Transport
+import io.github.timt.windhover.core.session.SensorInfo
 import io.github.timt.windhover.core.session.SessionHeader
 import io.github.timt.windhover.core.session.SessionWriter
 import io.github.timt.windhover.profileFile
@@ -73,7 +76,7 @@ class LoggingService : Service() {
                 ?.find { it.id == profileId }
         if (session?.isActive == true) return
         if (profile == null) return stopSelf()
-        startForeground(NOTIFICATION_ID, notification(profile), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+        startForeground(NOTIFICATION_ID, notification(profile), foregroundTypes())
         val wakeLock =
             getSystemService(PowerManager::class.java)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "windhover:logging")
@@ -97,14 +100,19 @@ class LoggingService : Service() {
                 Transport.SPP -> adapter.getRemoteDevice(profile.address).sppLines()
                 Transport.BLE -> adapter.bleLines(this, profile.address)
             }
+        val sensors = PhoneSensors(this)
         var writer: SessionWriter? = null
+        var recording: SensorRecording? = null
+        var started: SessionHeader? = null
         LoggingSession.update { it.starting(profile) }
         try {
             link
                 .onEach { event ->
                     when (event) {
                         LinkEvent.Connected -> {
-                            val opened = SessionWriter.open(sessionsRoot(), header(profile)).also { writer = it }
+                            val header = header(profile, sensors.info).also { started = it }
+                            val opened = SessionWriter.open(sessionsRoot(), header).also { writer = it }
+                            recording = sensors.record(opened.directory)
                             LoggingSession.update { it.connected(opened.directory.name) }
                         }
                         is LinkEvent.Received -> {
@@ -121,19 +129,34 @@ class LoggingService : Service() {
                     LoggingSession.update { it.failed(error.message ?: error.javaClass.simpleName) }
                 }.collect()
         } finally {
-            writer?.close()
+            val rates = recording?.stop().orEmpty()
+            writer?.run {
+                close()
+                started?.let { writeHeader(it.copy(achievedRatesHz = rates)) }
+            }
         }
     }
 
-    private fun header(profile: DeviceProfile) =
-        SessionHeader(
-            profile = profile,
-            appVersion = BuildConfig.VERSION_NAME,
-            phoneModel = "${Build.MANUFACTURER} ${Build.MODEL}",
-            androidVersion = Build.VERSION.RELEASE,
-            startedAtEpochMillis = System.currentTimeMillis(),
-            startedAtElapsedNanos = SystemClock.elapsedRealtimeNanos(),
-        )
+    private fun foregroundTypes() =
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            } else {
+                0
+            }
+
+    private fun header(
+        profile: DeviceProfile,
+        sensors: List<SensorInfo>,
+    ) = SessionHeader(
+        profile = profile,
+        appVersion = BuildConfig.VERSION_NAME,
+        phoneModel = "${Build.MANUFACTURER} ${Build.MODEL}",
+        androidVersion = Build.VERSION.RELEASE,
+        startedAtEpochMillis = System.currentTimeMillis(),
+        startedAtElapsedNanos = SystemClock.elapsedRealtimeNanos(),
+        sensors = sensors,
+    )
 
     private fun notification(profile: DeviceProfile): Notification {
         getSystemService(NotificationManager::class.java).createNotificationChannel(

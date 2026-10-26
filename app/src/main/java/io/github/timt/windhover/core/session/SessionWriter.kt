@@ -9,7 +9,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.Closeable
 import java.io.File
-import java.io.Writer
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -22,6 +21,18 @@ data class SessionHeader(
     val androidVersion: String,
     val startedAtEpochMillis: Long,
     val startedAtElapsedNanos: Long,
+    val sensors: List<SensorInfo> = emptyList(),
+    val achievedRatesHz: Map<String, Double> = emptyMap(),
+)
+
+@Serializable
+data class SensorInfo(
+    val stream: String,
+    val name: String,
+    val vendor: String,
+    val minDelayMicros: Int,
+    val resolution: Float,
+    val maximumRange: Float,
 )
 
 private val json = Json { prettyPrint = true }
@@ -43,20 +54,14 @@ fun sessionHeaderFromJson(text: String): Result4k<SessionHeader, String> =
 
 class SessionWriter private constructor(
     val directory: File,
-    private val log: Writer,
-    private val flushIntervalNanos: Long,
-    private var lastFlushNanos: Long,
+    private val log: LineLog,
 ) : Closeable {
     fun append(
         lines: List<ReceivedLine>,
         nowNanos: Long,
-    ) {
-        lines.forEach { log.write("${it.receivedAtNanos}\t${it.text}\n") }
-        if (nowNanos - lastFlushNanos >= flushIntervalNanos) {
-            log.flush()
-            lastFlushNanos = nowNanos
-        }
-    }
+    ) = lines.forEach { log.write("${it.receivedAtNanos}\t${it.text}", nowNanos) }
+
+    fun writeHeader(header: SessionHeader) = directory.writeHeader(header)
 
     override fun close() = log.close()
 
@@ -67,13 +72,19 @@ class SessionWriter private constructor(
             flushIntervalNanos: Long = 2_000_000_000,
         ): SessionWriter {
             val directory = root.resolve(header.directoryName()).apply { mkdirs() }
-            directory.resolve("header.json").writeText(json.encodeToString(SessionHeader.serializer(), header))
+            directory.writeHeader(header)
             return SessionWriter(
                 directory = directory,
-                log = directory.resolve("lx.log").bufferedWriter(bufferSize = 64 * 1024),
-                flushIntervalNanos = flushIntervalNanos,
-                lastFlushNanos = header.startedAtElapsedNanos,
+                log =
+                    LineLog.open(
+                        directory.resolve("lx.log"),
+                        startNanos = header.startedAtElapsedNanos,
+                        flushIntervalNanos = flushIntervalNanos,
+                    ),
             )
         }
     }
 }
+
+private fun File.writeHeader(header: SessionHeader) =
+    resolve("header.json").writeText(json.encodeToString(SessionHeader.serializer(), header))
