@@ -33,15 +33,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 private const val CHANNEL_ID = "logging"
 private const val NOTIFICATION_ID = 1
 private const val RECENT_LINE_LIMIT = 200
+private const val TICK_MILLIS = 1_000L
 private const val WAKE_LOCK_TIMEOUT_MILLIS = 12 * 60 * 60 * 1000L
 
 class LoggingService : Service() {
@@ -105,6 +108,13 @@ class LoggingService : Service() {
         var recording: SensorRecording? = null
         var started: SessionHeader? = null
         LoggingSession.update { it.starting(profile) }
+        val ticker =
+            scope.launch {
+                while (isActive) {
+                    delay(TICK_MILLIS)
+                    LoggingSession.update { it.tick(SystemClock.elapsedRealtimeNanos(), recording?.snapshot()) }
+                }
+            }
         try {
             link
                 .onEach { event ->
@@ -129,6 +139,7 @@ class LoggingService : Service() {
                     LoggingSession.update { it.failed(error.message ?: error.javaClass.simpleName) }
                 }.collect()
         } finally {
+            ticker.cancel()
             val rates = recording?.stop().orEmpty()
             writer?.run {
                 close()

@@ -20,6 +20,8 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
+import io.github.timt.windhover.core.dashboard.GnssStatus
+import io.github.timt.windhover.core.dashboard.PhoneSnapshot
 import io.github.timt.windhover.core.sensors.GNSS_RAW_HEADER
 import io.github.timt.windhover.core.sensors.GnssClockReading
 import io.github.timt.windhover.core.sensors.GnssMeasurementReading
@@ -75,6 +77,8 @@ class SensorRecording(
     private val gnss: GnssRecorder?,
 ) {
     fun stop(): Map<String, Double> = imu.stop() + gnss?.stop().orEmpty()
+
+    fun snapshot() = PhoneSnapshot(imu.stats + gnss?.stats.orEmpty(), gnss?.status)
 }
 
 class ImuRecorder(
@@ -85,7 +89,10 @@ class ImuRecorder(
     private val streamOf = streams.associate { (stream, sensor) -> sensor to stream }
     private val thread = HandlerThread("imu").apply { start() }
     private val log = LineLog.open(directory.resolve("imu.tsv.gz"), compressed = true, startNanos = now())
-    private var stats = emptyMap<String, StreamStats>()
+
+    @Volatile
+    var stats = emptyMap<String, StreamStats>()
+        private set
 
     init {
         val handler = Handler(thread.looper)
@@ -126,7 +133,14 @@ class GnssRecorder(
         LineLog.open(directory.resolve("gnss-raw.txt.gz"), compressed = true, startNanos = now()).apply {
             write(GNSS_RAW_HEADER, now())
         }
-    private var stats = emptyMap<String, StreamStats>()
+
+    @Volatile
+    var stats = emptyMap<String, StreamStats>()
+        private set
+
+    @Volatile
+    var status = GnssStatus()
+        private set
 
     private val locationListener = LocationListener(::recordLocation)
 
@@ -137,6 +151,11 @@ class GnssRecorder(
                 val utcMillis = System.currentTimeMillis()
                 event.measurements.forEach { raw.write(rawLine(utcMillis, clock, it.toReading()), now()) }
                 clock.elapsedRealtimeNanos?.let { record("gnss_raw", it) }
+                status =
+                    status.copy(
+                        satellites = event.measurements.distinctBy { it.constellationType to it.svid }.size,
+                        bestCn0DbHz = event.measurements.maxOfOrNull { it.cn0DbHz },
+                    )
             }
         }
 
@@ -157,6 +176,11 @@ class GnssRecorder(
     private fun recordLocation(location: Location) {
         locations.write(location.toFix().toLine(), now())
         record("location", location.elapsedRealtimeNanos)
+        status =
+            status.copy(
+                lastFixAtNanos = location.elapsedRealtimeNanos,
+                accuracyMetres = location.accuracy.takeIf { location.hasAccuracy() },
+            )
     }
 
     private fun record(

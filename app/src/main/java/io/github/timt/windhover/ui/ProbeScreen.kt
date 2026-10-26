@@ -268,6 +268,7 @@ private fun LiveStream(
             style = MaterialTheme.typography.bodySmall,
         )
     }
+    if (state.connection is ConnectionState.Connected) LiveDashboard(state.values, state.dashboard)
     LazyColumn(reverseLayout = true) {
         items(state.recent.asReversed()) { line -> LineRow(line) }
     }
