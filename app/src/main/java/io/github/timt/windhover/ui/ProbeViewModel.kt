@@ -21,8 +21,8 @@ import io.github.timt.windhover.core.scan.NearbyDevice
 import io.github.timt.windhover.core.scan.NearbyDevices
 import io.github.timt.windhover.core.session.LoggingState
 import io.github.timt.windhover.core.session.SessionSummary
+import io.github.timt.windhover.core.session.exportInto
 import io.github.timt.windhover.core.session.sessions
-import io.github.timt.windhover.core.session.zipTo
 import io.github.timt.windhover.exportsDir
 import io.github.timt.windhover.logging.LoggingSession
 import io.github.timt.windhover.profileFile
@@ -179,7 +179,7 @@ class ProbeViewModel(
                 val zip =
                     withContext(
                         Dispatchers.IO,
-                    ) { session.directory.zipInto(getApplication<Application>().exportsDir()) }
+                    ) { session.directory.exportInto(getApplication<Application>().exportsDir()) }
                 updateSessions { it.copy(exporting = null, readyToShare = zip) }
             } catch (e: IOException) {
                 updateSessions {
@@ -222,12 +222,6 @@ class ProbeViewModel(
             is Success -> copy(profiles = loaded.value)
             is Failure -> copy(profilesProblem = "Saved profiles could not be read: ${loaded.reason.describe()}")
         }
-}
-
-private fun File.zipInto(exports: File): File {
-    exports.deleteRecursively()
-    exports.mkdirs()
-    return exports.resolve("$name.zip").also { zip -> zip.outputStream().use(::zipTo) }
 }
 
 private fun DeviceProfile.toDraft() = ProfileDraft(name, glider, lxModel, address, transport)

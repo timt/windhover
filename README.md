@@ -30,6 +30,7 @@ Each logging session is a folder named `<UTC start>-<profile>` containing:
 All timestamps are `SystemClock.elapsedRealtimeNanos()`, so every file shares one clock.
 
 To share a session, tap **Sessions** on the profiles screen, then tap a session to zip it and open the Android share sheet.
+The zip also contains a Larus `.lrsx` log for replay through the Larus emulator — see [docs/larus-replay.md](docs/larus-replay.md).
 
 To copy every session to a computer over USB, enable USB debugging and run:
 
