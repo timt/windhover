@@ -51,6 +51,15 @@ class ProfilesTest {
     }
 
     @Test
+    fun `a phone-only profile needs no Bluetooth address and keeps none`() {
+        val draft = ProfileDraft("Car drive", "", "", "00:11", Transport.PHONE)
+
+        expectThat(
+            draft.toProfile("car"),
+        ).isEqualTo(Success(DeviceProfile("car", "Car drive", "", "", "", Transport.PHONE)))
+    }
+
+    @Test
     fun `saving adds a new profile and replaces one with the same id`() {
         val renamed = s80.copy(name = "S80 in the 29")
 

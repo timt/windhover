@@ -6,7 +6,7 @@ import dev.forkhandles.result4k.Success
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-enum class Transport { SPP, BLE }
+enum class Transport { SPP, BLE, PHONE }
 
 @Serializable
 data class DeviceProfile(
@@ -41,10 +41,11 @@ sealed interface ProfileError {
 private val bluetoothAddress = Regex("^([0-9A-F]{2}:){5}[0-9A-F]{2}$")
 
 fun ProfileDraft.toProfile(id: String): Result4k<DeviceProfile, ProfileError> {
-    val normalisedAddress = address.trim().uppercase()
+    val normalisedAddress = if (transport == Transport.PHONE) "" else address.trim().uppercase()
     return when {
         name.isBlank() -> Failure(ProfileError.BlankName)
-        !bluetoothAddress.matches(normalisedAddress) -> Failure(ProfileError.InvalidAddress(address))
+        transport != Transport.PHONE && !bluetoothAddress.matches(normalisedAddress) ->
+            Failure(ProfileError.InvalidAddress(address))
         else -> Success(DeviceProfile(id, name.trim(), glider.trim(), lxModel.trim(), normalisedAddress, transport))
     }
 }

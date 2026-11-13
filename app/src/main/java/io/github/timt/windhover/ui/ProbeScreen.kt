@@ -212,17 +212,23 @@ private fun ProfileForm(
                 FilterChip(
                     draft.transport == transport,
                     { onChange(draft.copy(transport = transport)) },
-                    label = { Text(transport.name) },
+                    label = { Text(transport.label()) },
                 )
             }
         }
-        DraftField("Bluetooth address", draft.address) { onChange(draft.copy(address = it)) }
+        val phoneOnly = draft.transport == Transport.PHONE
+        if (phoneOnly) {
+            Text("Logs the phone's motion sensors and GNSS without an LX unit.")
+        } else {
+            DraftField("Bluetooth address", draft.address) { onChange(draft.copy(address = it)) }
+        }
         editor.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onSave) { Text("Save") }
             OutlinedButton(onClick = onCancel) { Text("Cancel") }
             editor.id?.let { id -> TextButton(onClick = { onDelete(id) }) { Text("Delete") } }
         }
+        if (phoneOnly) return@Column
         HorizontalDivider()
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Nearby devices", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
@@ -304,9 +310,16 @@ private fun Context.granted(permission: String) =
     ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
 private fun DeviceProfile.summary(lastUsed: Boolean) =
-    listOf(glider, lxModel, transport.name, address, "last used".takeIf { lastUsed })
+    listOf(glider, lxModel, transport.label(), address, "last used".takeIf { lastUsed })
         .filterNot { it.isNullOrBlank() }
         .joinToString(" · ")
+
+private fun Transport.label() =
+    when (this) {
+        Transport.SPP -> "SPP"
+        Transport.BLE -> "BLE"
+        Transport.PHONE -> "Phone only"
+    }
 
 private fun ProfileDraft.withDevice(device: PairedDevice) =
     copy(address = device.address, name = name.ifBlank { device.name })

@@ -32,10 +32,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
@@ -102,6 +104,7 @@ class LoggingService : Service() {
             when (profile.transport) {
                 Transport.SPP -> adapter.getRemoteDevice(profile.address).sppLines()
                 Transport.BLE -> adapter.bleLines(this, profile.address)
+                Transport.PHONE -> phoneOnly()
             }
         val sensors = PhoneSensors(this)
         var writer: SessionWriter? = null
@@ -147,6 +150,12 @@ class LoggingService : Service() {
             }
         }
     }
+
+    private fun phoneOnly() =
+        flow<LinkEvent> {
+            emit(LinkEvent.Connected)
+            awaitCancellation()
+        }
 
     private fun foregroundTypes() =
         ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
